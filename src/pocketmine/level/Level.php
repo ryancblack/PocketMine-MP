@@ -33,6 +33,7 @@ use pocketmine\block\BrownMushroom;
 use pocketmine\block\Cactus;
 use pocketmine\block\Carrot;
 use pocketmine\block\Farmland;
+use pocketmine\block\Fire;
 use pocketmine\block\Grass;
 use pocketmine\block\Ice;
 use pocketmine\block\Leaves;
@@ -248,7 +249,7 @@ class Level implements ChunkManager, Metadatable{
 		Block::CARROT_BLOCK => Carrot::class,
 		Block::POTATO_BLOCK => Potato::class,
 		Block::LEAVES2 => Leaves2::class,
-
+		Block::FIRE => Fire::class,
 		Block::BEETROOT_BLOCK => Beetroot::class,
 	];
 
@@ -714,9 +715,17 @@ class Level implements ChunkManager, Metadatable{
 
 		foreach($this->moveToSend as $index => $entry){
 			Level::getXZ($index, $chunkX, $chunkZ);
-			$pk = new MoveEntityPacket();
-			$pk->entities = $entry;
-			$this->addChunkPacket($chunkX, $chunkZ, $pk);
+			foreach($entry as $e) {
+				$pk = new MoveEntityPacket();
+				$pk->eid = $e[0];
+				$pk->x = $e[1];
+				$pk->y = $e[2];
+				$pk->z = $e[3];
+				$pk->yaw = $e[4];
+				$pk->headYaw = $e[5];
+				$pk->pitch = $e[6];
+				$this->addChunkPacket($chunkX, $chunkZ, $pk);
+			}
 		}
 		$this->moveToSend = [];
 
@@ -787,11 +796,10 @@ class Level implements ChunkManager, Metadatable{
 	 * @param bool     $optimizeRebuilds
 	 */
 	public function sendBlocks(array $target, array $blocks, $flags = UpdateBlockPacket::FLAG_NONE, bool $optimizeRebuilds = false){
-		$pk = new UpdateBlockPacket();
-
 		if($optimizeRebuilds){
 			$chunks = [];
 			foreach($blocks as $b){
+				$pk = new UpdateBlockPacket();
 				if($b === null){
 					continue;
 				}
@@ -803,28 +811,48 @@ class Level implements ChunkManager, Metadatable{
 				}
 
 				if($b instanceof Block){
-					$pk->records[] = [$b->x, $b->z, $b->y, $b->getId(), $b->getDamage(), $first ? $flags : UpdateBlockPacket::FLAG_NONE];
+					$pk->x = $b->x;
+					$pk->z = $b->z;
+					$pk->y = $b->y;
+					$pk->blockId = $b->getId();
+					$pk->blockData = $b->getDamage();
+					$pk->flags = $first ? $flags : UpdateBlockPacket::FLAG_NONE;
 				}else{
 					$fullBlock = $this->getFullBlock($b->x, $b->y, $b->z);
-					$pk->records[] = [$b->x, $b->z, $b->y, $fullBlock >> 4, $fullBlock & 0xf, $first ? $flags : UpdateBlockPacket::FLAG_NONE];
+					$pk->x = $b->x;
+					$pk->z = $b->z;
+					$pk->y = $b->y;
+					$pk->blockId = $fullBlock >> 4;
+					$pk->blockData = $fullBlock & 0xf;
+					$pk->flags = $first ? $flags : UpdateBlockPacket::FLAG_NONE;
 				}
+				Server::broadcastPacket($target, $pk);
 			}
 		}else{
 			foreach($blocks as $b){
+				$pk = new UpdateBlockPacket();
 				if($b === null){
 					continue;
 				}
 				if($b instanceof Block){
-					$pk->records[] = [$b->x, $b->z, $b->y, $b->getId(), $b->getDamage(), $flags];
+					$pk->x = $b->x;
+					$pk->z = $b->z;
+					$pk->y = $b->y;
+					$pk->blockId = $b->getId();
+					$pk->blockData = $b->getDamage();
+					$pk->flags = $flags;
 				}else{
 					$fullBlock = $this->getFullBlock($b->x, $b->y, $b->z);
-					$pk->records[] = [$b->x, $b->z, $b->y, $fullBlock >> 4, $fullBlock & 0xf, $flags];
+					$pk->x = $b->x;
+					$pk->z = $b->z;
+					$pk->y = $b->y;
+					$pk->blockId = $fullBlock >> 4;
+					$pk->blockData = $fullBlock & 0xf;
+					$pk->flags = $flags;
 				}
+				Server::broadcastPacket($target, $pk);
 			}
 		}
-
-
-		Server::broadcastPacket($target, $pk);
 	}
 
 	public function clearCache(bool $full = false){
@@ -856,7 +884,7 @@ class Level implements ChunkManager, Metadatable{
 
 		$chunksPerLoader = min(200, max(1, (int) ((($this->chunksPerTick - count($this->loaders)) / count($this->loaders)) + 0.5)));
 		$randRange = 3 + $chunksPerLoader / 30;
-		$randRange = $randRange > $this->chunkTickRadius ? $this->chunkTickRadius : $randRange;
+		$randRange = (int) ($randRange > $this->chunkTickRadius ? $this->chunkTickRadius : $randRange);
 
 		foreach($this->loaders as $loader){
 			$chunkX = $loader->getX() >> 4;
@@ -1236,6 +1264,7 @@ class Level implements ChunkManager, Metadatable{
 	 * @return Block
 	 */
 	public function getBlock(Vector3 $pos, $cached = true) : Block{
+		$pos = $pos->floor();
 		$index = Level::blockHash($pos->x, $pos->y, $pos->z);
 		if($cached and isset($this->blockCache[$index])){
 			return $this->blockCache[$index];
@@ -1370,6 +1399,7 @@ class Level implements ChunkManager, Metadatable{
 	 * @return bool Whether the block has been updated or not
 	 */
 	public function setBlock(Vector3 $pos, Block $block, bool $direct = false, bool $update = true) : bool{
+		$pos = $pos->floor();
 		if($pos->y < 0 or $pos->y >= 128){
 			return false;
 		}
@@ -1465,7 +1495,7 @@ class Level implements ChunkManager, Metadatable{
 	 * @param Player  $player
 	 * @param bool    $createParticles
 	 *
-	 * @return boole
+	 * @return bool
 	 */
 	public function useBreakOn(Vector3 $vector, Item &$item = null, Player $player = null, bool $createParticles = false) : bool{
 		$target = $this->getBlock($vector);

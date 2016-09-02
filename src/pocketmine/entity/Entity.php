@@ -48,19 +48,17 @@ use pocketmine\metadata\MetadataValue;
 use pocketmine\nbt\tag\ByteTag;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\DoubleTag;
-use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\FloatTag;
 use pocketmine\nbt\tag\IntTag;
+use pocketmine\nbt\tag\ListTag;
 use pocketmine\nbt\tag\ShortTag;
 use pocketmine\nbt\tag\StringTag;
-use pocketmine\network\Network;
 use pocketmine\network\protocol\MobEffectPacket;
 use pocketmine\network\protocol\RemoveEntityPacket;
 use pocketmine\network\protocol\SetEntityDataPacket;
 use pocketmine\Player;
 use pocketmine\plugin\Plugin;
 use pocketmine\Server;
-use pocketmine\utils\ChunkException;
 
 abstract class Entity extends Location implements Metadatable{
 
@@ -75,8 +73,7 @@ abstract class Entity extends Location implements Metadatable{
 	const DATA_TYPE_STRING = 4;
 	const DATA_TYPE_SLOT = 5;
 	const DATA_TYPE_POS = 6;
-	const DATA_TYPE_ROTATION = 7;
-	const DATA_TYPE_LONG = 8;
+	const DATA_TYPE_LONG = 7;
 
 	const DATA_FLAGS = 0;
 	const DATA_AIR = 1;
@@ -86,6 +83,7 @@ abstract class Entity extends Location implements Metadatable{
 	const DATA_POTION_COLOR = 7;
 	const DATA_POTION_AMBIENT = 8;
 	const DATA_NO_AI = 15;
+	const DATA_LINKED_EID = 23;
 
 
 	const DATA_FLAG_ONFIRE = 0;
@@ -119,6 +117,7 @@ abstract class Entity extends Location implements Metadatable{
 		self::DATA_SHOW_NAMETAG => [self::DATA_TYPE_BYTE, 1],
 		self::DATA_SILENT => [self::DATA_TYPE_BYTE, 0],
 		self::DATA_NO_AI => [self::DATA_TYPE_BYTE, 0],
+		self::DATA_LINKED_EID => [self::DATA_TYPE_LONG, -1],
 	];
 
 	public $passenger = null;
@@ -191,6 +190,9 @@ abstract class Entity extends Location implements Metadatable{
 	protected $fireProof;
 	private $invulnerable;
 
+	/** @var AttributeMap */
+	protected $attributeMap;
+
 	protected $gravity;
 	protected $drag;
 
@@ -253,7 +255,7 @@ abstract class Entity extends Location implements Metadatable{
 		if(!isset($this->namedtag->Air)){
 			$this->namedtag->Air = new ShortTag("Air", 300);
 		}
-		$this->setDataProperty(self::DATA_AIR, self::DATA_TYPE_SHORT, $this->namedtag["Air"]);
+		$this->setDataProperty(self::DATA_AIR, self::DATA_TYPE_SHORT, $this->namedtag["Air"], false);
 
 		if(!isset($this->namedtag->OnGround)){
 			$this->namedtag->OnGround = new ByteTag("OnGround", 0);
@@ -264,6 +266,8 @@ abstract class Entity extends Location implements Metadatable{
 			$this->namedtag->Invulnerable = new ByteTag("Invulnerable", 0);
 		}
 		$this->invulnerable = $this->namedtag["Invulnerable"] > 0 ? true : false;
+
+		$this->attributeMap = new AttributeMap();
 
 		$this->chunk->addEntity($this);
 		$this->level->addEntity($this);
@@ -316,7 +320,11 @@ abstract class Entity extends Location implements Metadatable{
 	}
 
 	public function setSprinting($value = true){
-		$this->setDataFlag(self::DATA_FLAGS, self::DATA_FLAG_SPRINTING, (bool) $value);
+		if($value !== $this->isSprinting()){
+			$this->setDataFlag(self::DATA_FLAGS, self::DATA_FLAG_SPRINTING, (bool) $value);
+			$attr = $this->attributeMap->getAttribute(Attribute::MOVEMENT_SPEED);
+			$attr->setValue($value ? ($attr->getValue() * 1.3) : ($attr->getValue() / 1.3));
+		}
 	}
 
 	/**
@@ -360,7 +368,7 @@ abstract class Entity extends Location implements Metadatable{
 			){
 				return;
 			}
-			$effect->add($this, true);
+			$effect->add($this, true, $oldEffect);
 		}else{
 			$effect->add($this, false);
 		}
@@ -405,10 +413,10 @@ abstract class Entity extends Location implements Metadatable{
 	}
 
 	/**
-	 * @param int|string $type
-	 * @param FullChunk  $chunk
-	 * @param CompoundTag   $nbt
-	 * @param            $args
+	 * @param int|string  $type
+	 * @param FullChunk   $chunk
+	 * @param CompoundTag $nbt
+	 * @param             $args
 	 *
 	 * @return Entity
 	 */
@@ -503,6 +511,17 @@ abstract class Entity extends Location implements Metadatable{
 	protected function initEntity(){
 		assert($this->namedtag instanceof CompoundTag);
 
+		if(isset($this->namedtag->CustomName)){
+			$this->setNameTag($this->namedtag["CustomName"]);
+			if(isset($this->namedtag->CustomNameVisible)){
+				$this->setNameTagVisible($this->namedtag["CustomNameVisible"] > 0);
+			}
+		}
+
+		$this->scheduleUpdate();
+
+		$this->addAttributes();
+
 		if(isset($this->namedtag->ActiveEffects)){
 			foreach($this->namedtag->ActiveEffects->getValue() as $e){
 				$effect = Effect::getEffect($e["Id"]);
@@ -515,16 +534,9 @@ abstract class Entity extends Location implements Metadatable{
 				$this->addEffect($effect);
 			}
 		}
+	}
 
-
-		if(isset($this->namedtag->CustomName)){
-			$this->setNameTag($this->namedtag["CustomName"]);
-			if(isset($this->namedtag->CustomNameVisible)){
-				$this->setNameTagVisible($this->namedtag["CustomNameVisible"] > 0);
-			}
-		}
-
-		$this->scheduleUpdate();
+	protected function addAttributes(){
 	}
 
 	/**
@@ -591,10 +603,11 @@ abstract class Entity extends Location implements Metadatable{
 	 *
 	 */
 	public function attack($damage, EntityDamageEvent $source){
-		if($this->hasEffect(Effect::FIRE_RESISTANCE)
-			and $source->getCause() === EntityDamageEvent::CAUSE_FIRE
-			and $source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK
-			and $source->getCause() === EntityDamageEvent::CAUSE_LAVA
+		if($this->hasEffect(Effect::FIRE_RESISTANCE) and (
+				$source->getCause() === EntityDamageEvent::CAUSE_FIRE
+				or $source->getCause() === EntityDamageEvent::CAUSE_FIRE_TICK
+				or $source->getCause() === EntityDamageEvent::CAUSE_LAVA
+			)
 		){
 			$source->setCancelled();
 		}
@@ -668,6 +681,10 @@ abstract class Entity extends Location implements Metadatable{
 	 */
 	public function getLastDamageCause(){
 		return $this->lastDamageCause;
+	}
+
+	public function getAttributeMap(){
+		return $this->attributeMap;
 	}
 
 	/**
@@ -827,7 +844,7 @@ abstract class Entity extends Location implements Metadatable{
 					$this->fireTicks = 0;
 				}
 			}else{
-				if(!$this->hasEffect(Effect::FIRE_RESISTANCE) and ($this->fireTicks % 20) === 0 or $tickDiff > 20){
+				if(!$this->hasEffect(Effect::FIRE_RESISTANCE) and (($this->fireTicks % 20) === 0 or $tickDiff > 20)){
 					$ev = new EntityDamageEvent($this, EntityDamageEvent::CAUSE_FIRE_TICK, 1);
 					$this->attack($ev->getFinalDamage(), $ev);
 				}
@@ -1513,11 +1530,12 @@ abstract class Entity extends Location implements Metadatable{
 	 *
 	 * @return bool
 	 */
-	public function setDataProperty($id, $type, $value){
+	public function setDataProperty($id, $type, $value, $send = true){
 		if($this->getDataProperty($id) !== $value){
 			$this->dataProperties[$id] = [$type, $value];
-
-			$this->sendData($this->hasSpawned, [$id => $this->dataProperties[$id]]);
+			if($send === true) {
+				$this->sendData($this->hasSpawned, [$id => $this->dataProperties[$id]]);
+			}
 
 			return true;
 		}
@@ -1547,6 +1565,7 @@ abstract class Entity extends Location implements Metadatable{
 	 * @param int  $propertyId
 	 * @param int  $id
 	 * @param bool $value
+	 * @param int  $type
 	 */
 	public function setDataFlag($propertyId, $id, $value = true, $type = self::DATA_TYPE_BYTE){
 		if($this->getDataFlag($propertyId, $id) !== $value){

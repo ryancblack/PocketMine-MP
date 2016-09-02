@@ -241,6 +241,7 @@ class Item{
 	const WOODEN_BUTTON = 143;
 	const MOB_HEAD_BLOCK = 144;
 	const ANVIL = 145;
+	const SKULL_BLOCK = 144;
 	const TRAPPED_CHEST = 146;
 	const WEIGHTED_PRESSURE_PLATE_LIGHT = 147;
 	const WEIGHTED_PRESSURE_PLATE_HEAVY = 148;
@@ -295,7 +296,6 @@ class Item{
 	const BEETROOT_BLOCK = 244;
 	const STONECUTTER = 245;
 	const GLOWING_OBSIDIAN = 246;
-
 
 	//Normal Item IDs
 	const IRON_SHOVEL = 256;
@@ -408,7 +408,6 @@ class Item{
 	const CAKE = 354;
 	const BED = 355;
 
-
 	const COOKIE = 357;
 
 	const SHEARS = 359;
@@ -451,6 +450,8 @@ class Item{
 	const POISONOUS_POTATO = 394;
 	const GOLDEN_CARROT = 396;
 	const MOB_HEAD = 397;
+	const SKULL = 397;
+
 	const PUMPKIN_PIE = 400;
 
 	const ENCHANTED_BOOK = 403;
@@ -471,7 +472,6 @@ class Item{
 	const BEETROOT_SEEDS = 458;
 	const BEETROOT_SEED = 458;
 	const BEETROOT_SOUP = 459;
-
 
 	/** @var \SplFixedArray */
 	public static $list = null;
@@ -611,6 +611,7 @@ class Item{
 			self::$list[self::POTATO] = Potato::class;
 			self::$list[self::BAKED_POTATO] = BakedPotato::class;
 			self::$list[self::GOLDEN_CARROT] = GoldenCarrot::class;
+			self::$list[self::MOB_HEAD] = MobHead::class;
 			self::$list[self::PUMPKIN_PIE] = PumpkinPie::class;
 			self::$list[self::NETHER_BRICK] = NetherBrick::class;
 			self::$list[self::QUARTZ] = Quartz::class;
@@ -637,7 +638,7 @@ class Item{
 		self::clearCreativeItems();
 
 		$creativeItems = new Config(Server::getInstance()->getFilePath() . "src/pocketmine/resources/creativeitems.json", Config::JSON, []);
-
+		
 		foreach($creativeItems->getAll() as $item){
 			self::addCreativeItem(Item::get($item["ID"], $item["Damage"]));
 		}
@@ -1047,6 +1048,17 @@ class Item{
 
 	final public function canBePlaced() : bool{
 		return $this->block !== null and $this->block->canBePlaced();
+	}
+
+	public function canBeConsumed() : bool{
+		return false;
+	}
+
+	public function canBeConsumedBy(Entity $entity) : bool{
+		return $this->canBeConsumed();
+	}
+
+	public function onConsume(Entity $entity){
 	}
 
 	public function getBlock() : Block{

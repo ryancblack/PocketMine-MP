@@ -106,6 +106,7 @@ use pocketmine\tile\Chest;
 use pocketmine\tile\EnchantTable;
 use pocketmine\tile\Furnace;
 use pocketmine\tile\Sign;
+use pocketmine\tile\Skull;
 use pocketmine\tile\Tile;
 use pocketmine\updater\AutoUpdater;
 use pocketmine\utils\Binary;
@@ -2179,7 +2180,7 @@ class Server{
 	public function addOnlinePlayer(Player $player){
 		$this->playerList[$player->getRawUniqueId()] = $player;
 
-		$this->updatePlayerListData($player->getUniqueId(), $player->getId(), $player->getDisplayName(), $player->getSkinName(), $player->getSkinData());
+		$this->updatePlayerListData($player->getUniqueId(), $player->getId(), $player->getDisplayName(), $player->getSkinId(), $player->getSkinData());
 	}
 
 	public function removeOnlinePlayer(Player $player){
@@ -2193,10 +2194,10 @@ class Server{
 		}
 	}
 
-	public function updatePlayerListData(UUID $uuid, $entityId, $name, $skinName, $skinData, array $players = null){
+	public function updatePlayerListData(UUID $uuid, $entityId, $name, $skinId, $skinData, array $players = null){
 		$pk = new PlayerListPacket();
 		$pk->type = PlayerListPacket::TYPE_ADD;
-		$pk->entries[] = [$uuid, $entityId, $name, $skinName, $skinData];
+		$pk->entries[] = [$uuid, $entityId, $name, $skinId, $skinData];
 		Server::broadcastPacket($players === null ? $this->playerList : $players, $pk);
 	}
 
@@ -2211,7 +2212,7 @@ class Server{
 		$pk = new PlayerListPacket();
 		$pk->type = PlayerListPacket::TYPE_ADD;
 		foreach($this->playerList as $player){
-			$pk->entries[] = [$player->getUniqueId(), $player->getId(), $player->getDisplayName(), $player->getSkinName(), $player->getSkinData()];
+			$pk->entries[] = [$player->getUniqueId(), $player->getId(), $player->getDisplayName(), $player->getSkinId(), $player->getSkinData()];
 		}
 
 		$p->dataPacket($pk);
@@ -2504,6 +2505,7 @@ class Server{
 		Tile::registerTile(Chest::class);
 		Tile::registerTile(Furnace::class);
 		Tile::registerTile(Sign::class);
+		Tile::registerTile(Skull::class);
 		Tile::registerTile(EnchantTable::class);
 	}
 

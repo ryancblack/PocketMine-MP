@@ -21,22 +21,15 @@
 
 namespace pocketmine\item;
 
-use pocketmine\entity\Effect;
+use pocketmine\block\Block;
 
-class SpiderEye extends Food{
+class MobHead extends Item{
 	public function __construct($meta = 0, $count = 1){
-		parent::__construct(self::SPIDER_EYE, $meta, $count, "Spider Eye");
+		$this->block = Block::get(Item::SKULL_BLOCK);
+		parent::__construct(self::MOB_HEAD, $meta, $count, "Mob Head");
 	}
 
-	public function getFoodRestore() : int{
-		return 2;
-	}
-
-	public function getSaturationRestore() : float{
-		return 3.2;
-	}
-
-	public function getAdditionalEffects() : array{
-		return [Effect::getEffect(Effect::POISON)->setDuration(80)];
+	public function getMaxStackSize(){
+		return 1;
 	}
 }
